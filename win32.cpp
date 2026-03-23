@@ -1,6 +1,7 @@
-﻿#include <Windows.h>
+#include <Windows.h>
 #include <iostream>
-
+#include <bitset>
+#include <cstring>
 
 void PrintLastError(const char* msg);
 
@@ -18,6 +19,33 @@ static void PrintSystemTimeLocal(const FILETIME& ft) {
         << stLocal.wMilliseconds << "мс" << std::endl;
 }
 
+static void PrintAttributesDetailed(DWORD attrs) {
+    std::cout << "Общая маска (DWORD): " << std::bitset<32>(attrs) << "\n\n";
+
+    struct AttrInfo {
+        DWORD flag;
+        const char* name;
+    };
+
+    AttrInfo list[] = {
+        {FILE_ATTRIBUTE_READONLY,  "READONLY"},
+        {FILE_ATTRIBUTE_HIDDEN,    "HIDDEN"},
+        {FILE_ATTRIBUTE_SYSTEM,    "SYSTEM"},
+        {FILE_ATTRIBUTE_DIRECTORY, "DIRECTORY"},
+        {FILE_ATTRIBUTE_ARCHIVE,   "ARCHIVE"},
+        {FILE_ATTRIBUTE_NORMAL,    "NORMAL"}
+    };
+
+    std::cout << "Атрибуты:\n";
+
+    for (const auto& attr : list) {
+        std::cout << attr.name << ":\n";
+        std::cout << "  Бит: " << std::bitset<32>(attr.flag) << "\n";
+        std::cout << "  Состояние: "
+            << ((attrs & attr.flag) ? "ВКЛ" : "ВЫКЛ") << "\n\n";
+    }
+}
+
 void ShowFileInfoByHandle() {
     char path[260];
 
@@ -25,11 +53,10 @@ void ShowFileInfoByHandle() {
     std::cin.ignore();
     std::cin.getline(path, 260);
 
- 
     HANDLE hFile = CreateFileA(
         path,
         GENERIC_READ,
-        FILE_SHARE_READ,  
+        FILE_SHARE_READ,
         nullptr,
         OPEN_EXISTING,
         FILE_ATTRIBUTE_NORMAL,
@@ -48,7 +75,6 @@ void ShowFileInfoByHandle() {
         return;
     }
 
-
     unsigned long long fileSize = (static_cast<unsigned long long>(info.nFileSizeHigh) << 32) | info.nFileSizeLow;
 
     std::cout << "\nИнформация о файле (через HANDLE):\n";
@@ -57,11 +83,11 @@ void ShowFileInfoByHandle() {
     std::cout << "Кол-во ссылок (hard links): " << info.nNumberOfLinks << "\n";
     std::cout << "Серийный номер тома: " << info.dwVolumeSerialNumber << "\n";
 
- 
     unsigned long long fileIndex = (static_cast<unsigned long long>(info.nFileIndexHigh) << 32) | info.nFileIndexLow;
     std::cout << "FileIndex (ID файла на томе): " << fileIndex << "\n";
 
-    std::cout << "Атрибуты (dwFileAttributes): " << info.dwFileAttributes << "\n";
+    std::cout << "Атрибуты файла:\n";
+    PrintAttributesDetailed(info.dwFileAttributes);
 
     std::cout << "Время создания: ";
     PrintSystemTimeLocal(info.ftCreationTime);
@@ -103,8 +129,8 @@ void ChangeFileTimes() {
     SYSTEMTIME st;
     FILETIME ft;
 
-    GetSystemTime(&st);                  
-    SystemTimeToFileTime(&st, &ft);      
+    GetSystemTime(&st);
+    SystemTimeToFileTime(&st, &ft);
     if (!SetFileTime(hFile, &ft, &ft, &ft))
         PrintLastError("Не удалось изменить время");
 
@@ -112,7 +138,6 @@ void ChangeFileTimes() {
 
     CloseHandle(hFile);
 }
-
 
 void ShowFileTimes() {
     char path[260];
@@ -126,7 +151,7 @@ void ShowFileTimes() {
         GENERIC_READ,
         FILE_SHARE_READ,
         nullptr,
-        OPEN_EXISTING, //Получаем дескриптор только на сущ файл
+        OPEN_EXISTING,
         FILE_ATTRIBUTE_NORMAL,
         nullptr
     );
@@ -143,8 +168,6 @@ void ShowFileTimes() {
         return;
     }
 
-    SYSTEMTIME stUTC, stLocal;
-
     std::cout << "Время создания:";
     PrintSystemTimeLocal(creationTime);
 
@@ -156,7 +179,6 @@ void ShowFileTimes() {
 
     CloseHandle(hFile);
 }
-
 
 void ChangeFileAttributes() {
     char path[260];
@@ -172,19 +194,17 @@ void ChangeFileAttributes() {
     }
 
     std::cout << "Текущие атрибуты:\n";
-    if (attrs & FILE_ATTRIBUTE_READONLY)  std::cout << "- Только для чтения\n";
-    if (attrs & FILE_ATTRIBUTE_HIDDEN)    std::cout << "- Скрытыный\n";
-    if (attrs & FILE_ATTRIBUTE_ARCHIVE)   std::cout << "- Архивный\n";
+    PrintAttributesDetailed(attrs);
 
     char choice;
     std::cout << "Сделать файл Только для чтения? (y/n): ";
     std::cin >> choice;
     if (choice == 'y' || choice == 'Y')
-        attrs |= FILE_ATTRIBUTE_READONLY; 
+        attrs |= FILE_ATTRIBUTE_READONLY;
     else
         attrs &= ~FILE_ATTRIBUTE_READONLY;
 
-    std::cout << "Сделать файл Скрытыный? (y/n): ";
+    std::cout << "Сделать файл Скрытый? (y/n): ";
     std::cin >> choice;
     if (choice == 'y' || choice == 'Y')
         attrs |= FILE_ATTRIBUTE_HIDDEN;
@@ -200,12 +220,16 @@ void ChangeFileAttributes() {
 
     if (SetFileAttributesA(path, attrs)) {
         std::cout << "Атрибуты успешно изменены!\n";
+        DWORD newAttrs = GetFileAttributesA(path);
+        if (newAttrs != INVALID_FILE_ATTRIBUTES) {
+            std::cout << "Новые атрибуты:\n";
+            PrintAttributesDetailed(newAttrs);
+        }
     }
     else {
         PrintLastError("Не удалось изменить атрибуты");
     }
 }
-
 
 void ShowFileAttributes() {
     char path[260];
@@ -221,14 +245,8 @@ void ShowFileAttributes() {
     }
 
     std::cout << "Атрибуты файла " << path << ":\n";
-    if (attrs & FILE_ATTRIBUTE_READONLY)  std::cout << "- Только для чтения\n";
-    if (attrs & FILE_ATTRIBUTE_HIDDEN)    std::cout << "- Скрытый\n";
-    if (attrs & FILE_ATTRIBUTE_SYSTEM)    std::cout << "- Системный\n";
-    if (attrs & FILE_ATTRIBUTE_DIRECTORY) std::cout << "- Каталог\n";
-    if (attrs & FILE_ATTRIBUTE_ARCHIVE)   std::cout << "- Архивный\n";
-    if (attrs & FILE_ATTRIBUTE_NORMAL)    std::cout << "- Обычный\n";
+    PrintAttributesDetailed(attrs);
 }
-
 
 void MoveFileWithCheck() {
     char path_cur[260];
@@ -258,7 +276,6 @@ void MoveFileWithCheck() {
     }
 }
 
-
 void MoveFileExWithCheck() {
     char path_cur[260], path_move[260];
 
@@ -280,7 +297,6 @@ void MoveFileExWithCheck() {
             PrintLastError("Не удалось переместить файл через MoveFileEx");
     }
 }
-
 
 void CopyFileWithCheck() {
     char path_cur[260];
@@ -310,7 +326,6 @@ void CopyFileWithCheck() {
     }
 }
 
-
 void CreateFileInFolder() {
     char path[260];
 
@@ -321,9 +336,9 @@ void CreateFileInFolder() {
     HANDLE new_file = CreateFileA(
         path,
         GENERIC_READ | GENERIC_WRITE,
-        0,               
+        0,
         nullptr,
-        CREATE_NEW,     
+        CREATE_NEW,
         FILE_ATTRIBUTE_NORMAL,
         nullptr
     );
@@ -339,10 +354,9 @@ void CreateFileInFolder() {
     }
     else {
         std::cout << "Файл успешно создан: " << path << "\n";
-        CloseHandle(new_file); 
+        CloseHandle(new_file);
     }
 }
-
 
 void RemoveFolder() {
     char path[260];
@@ -365,13 +379,12 @@ void RemoveFolder() {
     }
 }
 
-
 void CreateFolder() {
-    char path[260]; 
+    char path[260];
 
     std::cout << "Введите путь для создания каталога, например C:\\NewFolder): ";
-    std::cin.ignore();           
-    std::cin.getline(path, 260);  
+    std::cin.ignore();
+    std::cin.getline(path, 260);
 
     if (CreateDirectoryA(path, nullptr)) {
         std::cout << "Каталог успешно создан: " << path << "\n";
@@ -380,7 +393,6 @@ void CreateFolder() {
         PrintLastError("Не удалось создать каталог");
     }
 }
-
 
 void ShowDiskInfo(const char* drive) {
     DWORD sectorsPerCluster, bytesPerSector, freeClusters, totalClusters;
@@ -410,9 +422,8 @@ void ShowDiskInfo(const char* drive) {
     std::cout << "Файловая система: " << fsName << "\n";
 }
 
-
 void PrintLastError(const char* msg = "") {
-    DWORD errorCode = GetLastError(); 
+    DWORD errorCode = GetLastError();
     if (errorCode == 0) {
         return;
     }
@@ -420,23 +431,22 @@ void PrintLastError(const char* msg = "") {
     char* errorText = nullptr;
 
     FormatMessageA(
-        FORMAT_MESSAGE_FROM_SYSTEM    // флаги: текст из системных сообщений
-        | FORMAT_MESSAGE_ALLOCATE_BUFFER // автоматическое выделение памяти
-        | FORMAT_MESSAGE_IGNORE_INSERTS, // игнорируем подстановки типа %1
-        nullptr,                      // Источник сообщений для наших флагов
-        errorCode,                    // код ошибки
-        0,                            // язык по умолчанию
-        (LPSTR)&errorText,            // куда запишется строка
-        0,                            // размер не нужен, так как ALLOCATE_BUFFER
-        nullptr                        // Для подстановки аргументов %1, %2
+        FORMAT_MESSAGE_FROM_SYSTEM
+        | FORMAT_MESSAGE_ALLOCATE_BUFFER
+        | FORMAT_MESSAGE_IGNORE_INSERTS,
+        nullptr,
+        errorCode,
+        0,
+        (LPSTR)&errorText,
+        0,
+        nullptr
     );
 
-    
     std::cout << msg;
     if (msg[0]) std::cout << ": ";
     if (errorText) {
         std::cout << errorText;
-        LocalFree(errorText);         
+        LocalFree(errorText);
     }
     else {
         std::cout << "Неизвестная ошибка, код: " << errorCode;
@@ -444,9 +454,7 @@ void PrintLastError(const char* msg = "") {
     std::cout << std::endl;
 }
 
-
 void ShowLogicalDrivesMask() {
-
     DWORD mask = GetLogicalDrives();
     if (mask == 0) {
         std::cout << "Ошибка получения списка дисков! Код ошибки: " << GetLastError() << "\n";
@@ -455,13 +463,11 @@ void ShowLogicalDrivesMask() {
 
     std::cout << "Список дисков (через GetLogicalDrives):\n";
 
-
     for (char drive = 'A'; drive <= 'Z'; ++drive) {
         DWORD bitMask = 1 << (drive - 'A');
 
-
         if (mask & bitMask) {
-            char drivePath[4];      
+            char drivePath[4];
             drivePath[0] = drive;
             drivePath[1] = ':';
             drivePath[2] = '\\';
@@ -483,9 +489,8 @@ void ShowLogicalDrivesMask() {
     }
 }
 
-
 void ShowLogicalDrivesString() {
-    char buffer[256]; 
+    char buffer[256];
     DWORD len = GetLogicalDriveStringsA(sizeof(buffer), buffer);
 
     if (len == 0) {
@@ -495,7 +500,6 @@ void ShowLogicalDrivesString() {
 
     std::cout << "Список дисков: (через GetLogicalDriveString)\n";
 
-    // buffer содержит строки вида: "C:\0D:\0E:\0\0"
     char* drive = buffer;
     while (*drive) {
         UINT type = GetDriveTypeA(drive);
@@ -508,26 +512,24 @@ void ShowLogicalDrivesString() {
         case DRIVE_FIXED:
             std::cout << "Жесткий диск";
             break;
-        case DRIVE_REMOTE:    
-            std::cout << "Сетевой диск"; 
+        case DRIVE_REMOTE:
+            std::cout << "Сетевой диск";
             break;
-        case DRIVE_CDROM:     
-            std::cout << "CD/DVD"; 
+        case DRIVE_CDROM:
+            std::cout << "CD/DVD";
             break;
-        case DRIVE_RAMDISK:   
+        case DRIVE_RAMDISK:
             std::cout << "RAM диск";
             break;
-        default:              
+        default:
             std::cout << "Неизвестный тип";
             break;
         }
         std::cout << "\n";
 
-        
         drive += strlen(drive) + 1;
     }
 }
-
 
 int main() {
     int choice;
@@ -560,7 +562,7 @@ int main() {
         case 2:
             ShowLogicalDrivesMask();
             break;
-        case 3:
+        case 3: {
             char drive[4];
             std::cout << "Введите букву диска, например C,D,F...\n";
             std::cin >> drive[0];
@@ -569,6 +571,7 @@ int main() {
             drive[3] = '\0';
             ShowDiskInfo(drive);
             break;
+        }
         case 4:
             CreateFolder();
             break;
