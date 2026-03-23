@@ -454,7 +454,7 @@ int main(int argc, char* argv[])
 
         if (elapsedTime > 0.0)
         {
-            printf("Скорость: %.2f байт/сек\n", (double)fileSize / elapsedTime);
+            printf("Скорость: %.2f МБайт/сек\n", ((double)fileSize / (1024.0 * 1024.0)) / elapsedTime);
         }
     }
     else
